@@ -70,12 +70,20 @@ router.post('/sendMessage', async (req, res) => {
   }
 });
 
+
 // Endpoint para guardar un mensaje enviado en la tabla DESTINATARIO
 router.post('/destinatario', async (req, res) => {
   const { idPais, idUsuario, idMensaje, idTipoCopia, consecContacto } = req.body;
 
   if (!idPais || !idUsuario || !idMensaje || !idTipoCopia || !consecContacto) {
     return res.status(400).json({ error: 'Todos los campos son obligatorios.' });
+  }
+
+  // Convertir los valores a números y validar que no sean NaN
+  const consecContactoNum = Number(consecContacto);
+
+  if (isNaN(consecContactoNum)) {
+    return res.status(400).json({ error: 'El campo consecContacto debe ser un número válido.' });
   }
 
   let connection;
@@ -102,31 +110,37 @@ router.post('/destinatario', async (req, res) => {
       await connection.execute(createSeqQuery);
     }
 
-    // Insertar en la tabla DESTINATARIO
-    const sql = `
+    // Obtener el siguiente valor de la secuencia
+    const seqValueQuery = `SELECT destinatario_seq.NEXTVAL AS NEXT_ID FROM DUAL`;
+    const seqValueResult = await connection.execute(seqValueQuery);
+    const nextId = seqValueResult.rows[0][0];
+
+    // Insertar el mensaje en la tabla DESTINATARIO
+    const insertQuery = `
       INSERT INTO DESTINATARIO (CONSECDESTINATARIO, IDPAIS, IDUSUARIO, IDMENSAJE, IDTIPOCOPIA, CONSECCONTACTO)
-      VALUES (destinatario_seq.NEXTVAL, :idPais, :idUsuario, :idMensaje, :idTipoCopia, :consecContacto)
+      VALUES (:consecDestinatario, :idPais, :idUsuario, :idMensaje, :idTipoCopia, :consecContacto)
     `;
+    const binds = {
+      consecDestinatario: nextId,
+      idPais: idPais, // VARCHAR2(5)
+      idUsuario: idUsuario, // VARCHAR2(5)
+      idMensaje: idMensaje, // VARCHAR2(5)
+      idTipoCopia: idTipoCopia, // VARCHAR2(4)
+      consecContacto: consecContactoNum // NUMBER(38)
+    };
 
-    const result = await connection.execute(sql, {
-      idPais,
-      idUsuario,
-      idMensaje,
-      idTipoCopia,
-      consecContacto
-    }, { autoCommit: true });
+    await connection.execute(insertQuery, binds, { autoCommit: true });
 
-    res.status(201).json({ message: 'Mensaje enviado y guardado correctamente.' });
+    res.status(201).json({ message: 'Mensaje guardado exitosamente' });
   } catch (error) {
     console.error('Error al guardar el mensaje:', error);
-    res.status(500).json({ error: 'Error interno del servidor.' });
+    res.status(500).json({ error: 'Internal Server Error', details: error.message });
   } finally {
-    // Cerrar la conexión
     if (connection) {
       try {
         await connection.close();
-      } catch (error) {
-        console.error('Error al cerrar la conexión:', error);
+      } catch (err) {
+        console.error('Error closing connection:', err);
       }
     }
   }
