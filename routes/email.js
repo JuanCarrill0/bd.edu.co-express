@@ -73,13 +73,7 @@ router.post('/sendMessage', async (req, res) => {
 
 // Endpoint para guardar un mensaje enviado en la tabla DESTINATARIO
 router.post('/destinatario', async (req, res) => {
-  const { 
-    idPais, 
-    idUsuario, 
-    idMensaje, 
-    idTipoCopia, 
-    consecContacto 
-  } = req.body;
+  const { idPais, idUsuario, idMensaje, idTipoCopia, consecContacto } = req.body;
 
   if (!idPais || !idUsuario || !idMensaje || !idTipoCopia || !consecContacto) {
     return res.status(400).json({ error: 'Todos los campos son obligatorios.' });
@@ -97,25 +91,6 @@ router.post('/destinatario', async (req, res) => {
     // Conectar a la base de datos
     connection = await oracledb.getConnection();
 
-    // // Verificar si la secuencia existe y crearla si no existe
-    // const checkSeqQuery = `
-    //   SELECT COUNT(*) AS SEQ_COUNT
-    //   FROM USER_SEQUENCES
-    //   WHERE SEQUENCE_NAME = 'DESTINATARIO_SEQ'
-    // `;
-    // const seqResult = await connection.execute(checkSeqQuery);
-    // const seqCount = seqResult.rows[0][0];
-
-    // if (seqCount === 0) {
-    //   const createSeqQuery = `
-    //     CREATE SEQUENCE destinatario_seq
-    //     START WITH 1
-    //     INCREMENT BY 1
-    //     NOCACHE
-    //   `;
-    //   await connection.execute(createSeqQuery);
-    // }
-
     // Obtener el siguiente valor de la secuencia
     const seqValueQuery = `SELECT destinatario_seq.NEXTVAL AS NEXT_ID FROM DUAL`;
     const seqValueResult = await connection.execute(seqValueQuery);
@@ -127,7 +102,6 @@ router.post('/destinatario', async (req, res) => {
       VALUES (seq_consecdestinatario.NEXTVAL, :idPais, :idUsuario, :idMensaje, :idTipoCopia, :consecContacto)
     `;
     const binds = {
-      consecDestinatario: nextId,
       idPais: idPais, // VARCHAR2(5)
       idUsuario: idUsuario, // VARCHAR2(5)
       idMensaje: idMensaje, // VARCHAR2(5)
@@ -152,10 +126,11 @@ router.post('/destinatario', async (req, res) => {
   }
 });
 
-router.get('/recibidos', async (req, res) => {
-  const { correocontacto } = req.query;
 
-  if (!correocontacto) {
+router.get('/recibidos', async (req, res) => {
+  const { correoContacto } = req.query;
+
+  if (!correoContacto) {
     return res.status(400).json({ error: 'ID de usuario es requerido.' });
   }
   
@@ -163,30 +138,46 @@ router.get('/recibidos', async (req, res) => {
   try {
     // Conectar a la base de datos
     connection = await oracledb.getConnection();
-    const sql = `
-    SELECT U.NOMBRE, M.ASUNTO, M.CUERPOMENSAJE, M.FECHAACCION, M.HORAACCION, U.CORREOALTERNO REMITENTE
-      FROM MENSAJE M, DESTINATARIO D, TIPOCOPIA T, CONTACTO C, USUARIO U
-      WHERE C.CORREOCONTACTO = :correocontacto AND
-	    C.CONSECCONTACTO = D.CONSECCONTACTO AND
-      D.IDUSUARIO = M.IDUSUARIO AND
-      M.IDUSUARIO = U.IDUSUARIO AND
-      T.IDTIPOCOPIA = D.IDTIPOCOPIA AND 
-      T.IDTIPOCOPIA = 'CO'
+    // Paso 1: Obtener el CONSECCONTACTO del contacto
+    const queryConsecContacto = `
+      SELECT CONSECCONTACTO
+      FROM CONTACTO
+      WHERE CORREOCONTACTO = :correoContacto
     `;
+    const resultConsecContacto = await connection.execute(queryConsecContacto, { correoContacto });
 
-    const result = await connection.execute(sql, {
-      correocontacto
-    }, { autoCommit: true });
+    // Verificar si se encontró el contacto
+    if (resultConsecContacto.rows.length === 0) {
+      return res.status(404).json({ mensaje: 'No se encontró el contacto con el correo proporcionado.' });
+    }
 
-    console.log(result);
+    const consecContacto = resultConsecContacto.rows[0][0]; // Obtener el CONSECCONTACTO
 
-    // Verificar si se encontró un usuario
-    if (result.rows.length === 0) {
-      return res.status(200).json({ mensaje: 'Correo Recibido Vacio' });
+    // Paso 2: Obtener los mensajes asociados al CONSECCONTACTO
+    const queryMensajes = `
+      SELECT 
+        M.ASUNTO,
+        M.CUERPOMENSAJE,
+        M.FECHAACCION,
+        M.HORAACCION,
+        U.NOMBRE AS REMITENTE_NOMBRE,
+        U.CORREOALTERNO AS REMITENTE_CORREO
+      FROM 
+        DESTINATARIO D
+        JOIN MENSAJE M ON D.IDUSUARIO = M.IDUSUARIO AND D.IDMENSAJE = M.IDMENSAJE
+        JOIN USUARIO U ON M.IDUSUARIO = U.IDUSUARIO
+      WHERE 
+        D.CONSECCONTACTO = :consecContacto
+    `;
+    const resultMensajes = await connection.execute(queryMensajes, { consecContacto });
+
+    // Verificar si se encontraron mensajes
+    if (resultMensajes.rows.length === 0) {
+      return res.status(200).json({ mensaje: 'No hay mensajes asociados a este contacto.' });
     }
 
     // Devolver el usuario encontrado
-    res.status(200).json({ inbox: result.rows });
+    res.status(200).json({ inbox: resultMensajes.rows  });
   } catch (error) {
     console.error('Error fetching user:', error);
     res.status(500).json({ error: 'Internal Server Error', details: error.message });
