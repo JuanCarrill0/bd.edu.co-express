@@ -5,6 +5,7 @@ const oracledb = require('oracledb');
 const loginRoutes = require('./routes/login');
 const usuariosRoutes = require('./routes/usuarios');
 const emailRoutes = require('./routes/email');
+const archivosRoutes = require('./routes/archivos');
 
 const app = express();
 const port = process.env.PORT || 3001;
@@ -14,8 +15,8 @@ app.use(bodyParser.json());
 
 const dbConfig = {
   user: 'system',
-  password: 'Oracle2025',
-  connectString: '192.168.2.122:1521/XE'
+  password: 'Oracle',
+  connectString: 'Cris:1522/XE'
 };
 
 async function initialize() {
@@ -32,6 +33,7 @@ initialize();
 app.use('/api', loginRoutes);
 app.use('/api', usuariosRoutes);
 app.use('/api', emailRoutes);
+app.use('/api', archivosRoutes);
 
 app.listen(port, () => {
   console.log(`Server running on port ${port}`);
