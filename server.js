@@ -15,9 +15,9 @@ app.use(bodyParser.json());
 
 const dbConfig = {
   user: 'system',
-  password: 'Oracle',
-  connectString: 'Cris:1522/XE'
-};
+  password: 'Oracle2025',
+  connectString: '192.168.2.122:1521/XE'
+}
 
 async function initialize() {
   try {
